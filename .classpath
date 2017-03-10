@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src/main/java/com/ng/encryption"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="D:/MbusaGit/Code/Other/jars/bcmail-jdk14-1.38.jar"/>
+	<classpathentry kind="lib" path="D:/MbusaGit/Code/Other/jars/bcprov-jdk14-1.38.jar"/>
+	<classpathentry kind="lib" path="D:/MbusaGit/Code/Other/jars/bcprov-jdk15on-1.51.jar"/>
+	<classpathentry kind="lib" path="D:/MbusaGit/Code/Other/jars/bctsp-jdk14-1.38.jar"/>
+	<classpathentry kind="lib" path="D:/MbusaGit/Code/Other/jars/log4j-1.2.17.jar"/>
+	<classpathentry kind="lib" path="D:/EXT Jar/Px/commons-codec-1.2.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
