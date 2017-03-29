@@ -15,7 +15,7 @@ import javax.crypto.IllegalBlockSizeException;
 import org.apache.commons.codec.binary.Base64;
 
 /**
- * @author Ricardo Sequeira
+ * @author Neeraj Ghiya
  *
  */
 public class RSAFinal {

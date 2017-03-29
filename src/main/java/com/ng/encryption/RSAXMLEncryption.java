@@ -1,114 +1,120 @@
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.KeyFactory;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.Key;
 
-import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.xml.bind.DatatypeConverter;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.DESedeKeySpec;
 
-import org.apache.commons.ssl.PKCS8Key;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.xml.security.encryption.EncryptedData;
+import org.apache.xml.security.encryption.EncryptedKey;
+import org.apache.xml.security.encryption.XMLCipher;
+import org.apache.xml.security.keys.KeyInfo;
+import org.apache.xml.security.utils.EncryptionConstants;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
+import com.mbusa.mef.util.XmlUtil;
 
-
-/**
- * @author Neeraj Ghiya
- *
- */
-public class RSACert {
+public class RSAXMLEncryption {
+	static org.apache.commons.logging.Log log =
+	        org.apache.commons.logging.LogFactory.getLog(
+	        		RSAXMLEncryption.class.getName());
 	
-	private static final String ALGORITHM = "RSA";
-
-   /**
-     * Constructs a private key (RSA) from the given file
-     * 
-     * @param key PEM Private Key
-     * @return RSA Private Key
-     * @throws IOException
-     * @throws GeneralSecurityException
-     */
-    public static PrivateKey getPrivateKey(String key) throws IOException, GeneralSecurityException {
-        
-       FileInputStream in = new FileInputStream( key );
-       char[] password = { 'm', 'b', 'u', 's', 'a', 'e', 'a', 'i' };
-       PKCS8Key pkcs8 = new PKCS8Key( in, password );
-       byte[] decrypted = pkcs8.getDecryptedBytes();
-       PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec( decrypted );
-       PrivateKey pk = KeyFactory.getInstance( "RSA" ).generatePrivate( spec );
-       return pk;
-        
+	static {
+        org.apache.xml.security.Init.init();
     }
 
     /**
-     * Constructs a public key (RSA) from the given file
-     * 
-     * @param key PEM Public Key
-     * @return RSA Public Key
-     * @throws IOException
-     * @throws GeneralSecurityException
+     * Encryption method using symmetric keys
+     * @param data Node, containing the data that requires encryption
+     * @param skJceAlgorithmName Name of the data encryption symmetric key algorithm. e.g. 'AES'.
+     * @param kekJceAlgorithmName Name of the key encryption key algorithm. e.g. 'DESede'.
+     * @return EncryptedData element wrapped within a container that also contains the unencrypted key encryption key.
      */
-    public static PublicKey getPublicKey(String key) throws IOException, GeneralSecurityException {
+    public static Node encryptXMLSym(String data, String skJceAlgorithmName, String kekJceAlgorithmName) throws Exception
+    {
+    	Document doc = XmlUtil.parseAsXml(data);//new XDocument(data).getDocument();
+
+        // Generate the symmetric key that will be used to encrypt the data
+        //String skJceAlgorithmName = "AES";
+        KeyGenerator skGenerator = KeyGenerator.getInstance(skJceAlgorithmName);
+        skGenerator.init(128);
+        Key sk = skGenerator.generateKey();
+
+        // Generate the key that will be used to encrypt the symmetric key
+        //String kekJceAlgorithmName = "DESede";
+        KeyGenerator kekGenerator = KeyGenerator.getInstance(kekJceAlgorithmName);
+        Key kek = kekGenerator.generateKey();
+
+        // Encrypt the symmetric key
+        String algorithmURI = XMLCipher.TRIPLEDES_KeyWrap;
+        XMLCipher keyCipher = XMLCipher.getInstance(algorithmURI);
+        keyCipher.init(XMLCipher.WRAP_MODE, kek);
+        EncryptedKey encryptedKey = keyCipher.encryptKey(doc, sk);
+
+        // Encrypt the data
+        algorithmURI = XMLCipher.AES_128;
+        XMLCipher xmlCipher = XMLCipher.getInstance(algorithmURI);
+
+        xmlCipher.init(XMLCipher.ENCRYPT_MODE, sk);
+
+        // Include the KeyInfo within the encrypted data
+        EncryptedData encryptedData = xmlCipher.getEncryptedData();
+        KeyInfo keyInfo = new KeyInfo(doc);
+        keyInfo.add(encryptedKey);
+        encryptedData.setKeyInfo(keyInfo);
+
+        // Replace the original data with the EncryptedData element.
+        // 'false' indicates the root element should be included within the encrypted data.
+        xmlCipher.doFinal(doc, doc.getDocumentElement(), false);
+
         
-      //  System.out.println("publicKeyPEM == " + publicKeyPEM );
-        FileInputStream fin = new FileInputStream(key);
-        CertificateFactory f = CertificateFactory.getInstance("X.509");
-        X509Certificate certificate = (X509Certificate)f.generateCertificate(fin);
-        PublicKey pk = certificate.getPublicKey();
-        return pk;
-        
+        return doc.getDocumentElement();
     }
 
     /**
-     * Encrypts the text with the public key (RSA)
-     * 
-     * @param rawText Text to be encrypted
-     * @param publicKey
-     * @return
-     * @throws IOException
-     * @throws GeneralSecurityException
+     * Decryption method using symmetric keys
+     * @param data Node, containing the EncryptedData element that requires decrypting
+     * @param kekString The Base64 encoded and unencrypted secret key encryption key that was used during encryption.
+     * @param kekJceAlgorithmName Name of the key encryption key algorithm. e.g. 'DESede'.
+     * @return The original decrypted XML node.
      */
-    public static byte[] encrypt(String rawText, PublicKey publicKey) throws IOException, GeneralSecurityException {
-    	
-    	Cipher cipher = Cipher.getInstance(ALGORITHM);
-        cipher.init(Cipher.PUBLIC_KEY, publicKey);
-        
-        byte[] bytes = rawText.getBytes("UTF-8");
-        
-        byte[] encrypted = blockCipher(bytes,cipher, Cipher.PUBLIC_KEY);
-        
-        return encrypted;
-    }
+    public static Node decryptXMLSym(String data, String kekString, String kekJceAlgorithmName) throws Exception
+    {
+        Document document = XmlUtil.parseAsXml(data);//new XDocument(data).getDocument();
 
-    /**
-     * Decrypts the text with the private key (RSA)
-     * 
-     * @param cipherText Text to be decrypted
-     * @param privateKey
-     * @return Decrypted text (Base64 encoded)
-     * @throws IOException
-     * @throws GeneralSecurityException
-     */
-    public static byte[] decrypt(byte[] cipherText, PrivateKey privateKey) throws IOException, GeneralSecurityException {
-    	Cipher cipher = Cipher.getInstance(ALGORITHM);
-        cipher.init(Cipher.PRIVATE_KEY, privateKey);
-        
-        byte[] decrypted = blockCipher(cipherText,cipher, Cipher.PRIVATE_KEY);
+        // Locate the EncryptedData element
+        Element encryptedDataElement = (Element)document.getElementsByTagNameNS(
+                EncryptionConstants.EncryptionSpecNS,
+                EncryptionConstants._TAG_ENCRYPTEDDATA).item(0);
 
-        return decrypted;
+        // Identify the key that will be used to decrypt the data encryption key.
+        // This is the Base64 encoded kekString param
+        // The key used to decrypt the data will be obtained from the
+        // KeyInfo element of the EncrypteData element using the kekString.
+
+        //String kekJceAlgorithmName = "DESede";
+        DESedeKeySpec keySpec = new DESedeKeySpec(Base64.decodeBase64(kekString.getBytes()));
+        SecretKeyFactory skf = SecretKeyFactory.getInstance(kekJceAlgorithmName);
+        SecretKey kek = skf.generateSecret(keySpec);
+
+        // Decrypt the data
+        String algorithmURI = XMLCipher.AES_128;
+        XMLCipher xmlCipher = XMLCipher.getInstance();
+        xmlCipher.init(XMLCipher.DECRYPT_MODE, null);
+        xmlCipher.setKEK(kek);
+
+        // Replace the EncryptedData element with the decrypted fragment.
+        xmlCipher.doFinal(document, encryptedDataElement);
+
+        return document.getDocumentElement();
     }
     
-    public static void main(String[] args) throws IOException, GeneralSecurityException {
-    	PublicKey publicKey = getPublicKey("D:\\MBFS_Encryption\\XB62DataPower-sscert.pem");
-    	PrivateKey privateKey = getPrivateKey("D:\\MBFS_Encryption\\XB62DataPower-privkey.pem");
+    public static void main(String[] args) throws Exception {
+    	//PublicKey publicKey = getPublicKey("D:\\MBFS_Encryption\\XB62DataPower-sscert.pem");
+    	//PrivateKey privateKey = getPrivateKey("D:\\MBFS_Encryption\\XB62DataPower-privkey.pem");
        // String message = "hello World11111111111111113333333444444445555555555556666677777777777999999999999999991 1111111111222222222222222222777777777777777777777777777777777777 vvvvvvvvvvvvvvvvvvvvvvvvvv  wwwwwwwwwwwwwwwwwwwwwwww   rrrrrrrrrrrrrrrrrrrrrrrrrrrrr";
     	/*String message = "<star:Acknowledge confirm=\"Always\"/>" +
       "<star:CreditContractResponse>" +
@@ -127,7 +133,7 @@ public class RSACert {
 		"</star:Financing>" +
       "</star:CreditContractResponse>";*/
     	
-    	String message = "<star:Process acknowledge=\"Always\" confirm=\"Always\"/>" +
+    	String message = //"<star:Process acknowledge=\"Always\" confirm=\"Always\"/>" +
             "<star:CreditContract>" +
                "<star:Header>" +
                  "<star:DocumentDateTime> +2016-11-30T15:39:46-05:00</star:DocumentDateTime>" +
@@ -403,75 +409,13 @@ public class RSACert {
                "</star:Financing>" +
             "</star:CreditContract>";
     	
-        byte[] secret = encrypt(message, publicKey);
-        String str = new String(secret, StandardCharsets.UTF_8);
-        PrintWriter out = new PrintWriter( "D:\\MBFS_Encryption\\encryptString.txt" );  
-            out.println( str );
-            out.close();
-        System.out.println(bytesToHex(secret));
-        FileOutputStream fos = new FileOutputStream("D:\\encrypted.txt");
+        Node secret = encryptXMLSym(message, "AES", "DESede");
+        System.out.println(XmlUtil.serializeAsString(secret,true));
+       /* FileOutputStream fos = new FileOutputStream("D:\\encrypted.txt");
         fos.write(secret);
         fos.close();
         byte[] recovered_message = decrypt(secret, privateKey);
-        System.out.println(new String(recovered_message));
+        System.out.println(new String(recovered_message));*/
 	}
-    
-    private static byte[] blockCipher(byte[] bytes, Cipher cipher, int mode) throws IllegalBlockSizeException, BadPaddingException{
-    	// scrambled will hold intermediate results
-    	byte[] scrambled = new byte[0];
-
-    	// toReturn will hold the total result
-    	byte[] toReturn = new byte[0];
-    	// if we encrypt we use 245 byte long blocks. Decryption requires 256 byte long blocks (because of RSA)
-    	int length = (mode == Cipher.PUBLIC_KEY)? 245 : 256;
-
-    	// another buffer. this one will hold the bytes that have to be modified in this step
-    	byte[] buffer = new byte[length];
-
-    	for (int i=0; i< bytes.length; i++){
-
-    		// if we filled our buffer array we have our block ready for de- or encryption
-    		if ((i > 0) && (i % length == 0)){
-    			scrambled = cipher.doFinal(buffer);
-    			toReturn = append(toReturn,scrambled);
-    			// here we calculate the length of the next buffer required
-    			int newlength = length;
-
-    			// if newlength would be longer than remaining bytes in the bytes array we shorten it.
-    			if (i + length > bytes.length) {
-    				 newlength = bytes.length - i;
-    			}
-    			// clean the buffer array
-    			buffer = new byte[newlength];
-    		}
-    		// copy byte into our buffer.
-    		buffer[i%length] = bytes[i];
-    	}
-
-    	// this step is needed if we had a trailing buffer. should only happen when encrypting.
-    	// example: we encrypt 110 bytes. 100 bytes per run means we "forgot" the last 10 bytes. they are in the buffer array
-    	scrambled = cipher.doFinal(buffer);
-
-    	// final step before we can return the modified data.
-    	toReturn = append(toReturn,scrambled);
-
-    	return toReturn;
-    }
-    
-    private static byte[] append(byte[] prefix, byte[] suffix){
-    	byte[] toReturn = new byte[prefix.length + suffix.length];
-    	for (int i=0; i< prefix.length; i++){
-    		toReturn[i] = prefix[i];
-    	}
-    	for (int i=0; i< suffix.length; i++){
-    		toReturn[i+prefix.length] = suffix[i];
-    	}
-    	return toReturn;
-    }
-    
-    private static String  bytesToHex(byte[] hash) {
-    	   return DatatypeConverter.printHexBinary(hash);
-    	
-    }
 
 }
