@@ -10,6 +10,7 @@ import org.apache.xml.security.encryption.EncryptedData;
 import org.apache.xml.security.encryption.EncryptedKey;
 import org.apache.xml.security.encryption.XMLCipher;
 import org.apache.xml.security.keys.KeyInfo;
+import org.apache.xml.security.keys.content.KeyName;
 import org.apache.xml.security.utils.EncryptionConstants;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -53,6 +54,11 @@ public class RSAXMLEncryption {
         XMLCipher keyCipher = XMLCipher.getInstance(algorithmURI);
         keyCipher.init(XMLCipher.WRAP_MODE, kek);
         EncryptedKey encryptedKey = keyCipher.encryptKey(doc, sk);
+        encryptedKey.setRecipient("name:XB62DataPower");
+        KeyInfo paramKeyInfo = new KeyInfo(doc);
+        KeyName keyName = new KeyName(doc, "XB62DataPower");
+        paramKeyInfo.add(keyName);
+        encryptedKey.setKeyInfo(paramKeyInfo);
 
         // Encrypt the data
         algorithmURI = XMLCipher.AES_128;
@@ -69,7 +75,8 @@ public class RSAXMLEncryption {
         // Replace the original data with the EncryptedData element.
         // 'false' indicates the root element should be included within the encrypted data.
         xmlCipher.doFinal(doc, doc.getDocumentElement(), false);
-
+        
+        doc.normalizeDocument();
         
         return doc.getDocumentElement();
     }
