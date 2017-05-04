@@ -1,6 +1,9 @@
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,7 +16,12 @@ import java.io.Writer;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Properties;
 
 import javax.mail.Address;
@@ -46,12 +54,24 @@ public class StarLeadShiftDigitalCronService {
 		File[] files = file.listFiles(new FilenameFilter() {
 		    @Override
 		    public boolean accept(File dir, String name) {
-		    	return name.endsWith(".xml");
+		    	boolean accept = false;
+		    	List leadList = null;
+		    	try {
+					 leadList = readCSVFile();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+		    	if(!leadList.contains(name) && name.endsWith(".xml")){
+		    		accept = true;
+		    	}
+		    	return accept;
 		    }
 		}); 
 		System.out.println("file: " + file);
 		BufferedReader br = null;
 		for (int i=0;i< files.length;i++){
+			System.out.println(files[i].getName());
 			br = new BufferedReader(new InputStreamReader(new FileInputStream(filePath+"/"+files[i].getName())));
 			String line = br.readLine();
 			StringBuilder sb = new StringBuilder();
@@ -65,7 +85,7 @@ public class StarLeadShiftDigitalCronService {
 			xml = changeBusinessServiceName(xml, "P2VQueue");
 			documentIds.append(files[i].getName());
 			sendRestCall(xml);
-			files[i].delete();
+			updateFile(files[i].getName(), true);
 		}
 		sendMail("Total Failed Files : " + files.length + "\n  File Name = " + "( " + documentIds + ")");
 	}
@@ -123,50 +143,7 @@ public class StarLeadShiftDigitalCronService {
 		}
 	}
 	
-	/*private static void sendMail(String xmlMessage) {
-		System.out.println("Inside sendRestCall ");
-		try {
-			byte[] postData = xmlMessage.getBytes("UTF-8");
-			int    postDataLength = postData.length;
-			URL url = new URL("http://eaimail.usfdc.corpintra.net/MailHubWeb/MailHubRestService");//new URL(StarleadUtil.getRestLeadUpdateUrl("leadUpdate"));
-			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-			conn.setDoOutput(true);
-			conn.setRequestMethod("POST");
-			conn.setRequestProperty("Content-Type", "text/xml");
-			conn.setRequestProperty( "charset", "utf-8");
-			conn.setRequestProperty( "Content-Length", Integer.toString( postDataLength ));
-			conn.setUseCaches( false );
-
-			OutputStream os = conn.getOutputStream();
-			try( DataOutputStream wr = new DataOutputStream( os)) {
-				   wr.write( postData );
-				}
-			os.write(postData);
-			os.flush();
-			if (conn.getResponseCode() != HttpURLConnection.HTTP_CREATED) {
-				System.out.println("Failed : HTTP error code : " + conn.getResponseCode());
-				//throw new RuntimeException("Failed : HTTP error code : " + conn.getResponseCode());
-			}
-
-			BufferedReader br = new BufferedReader(new InputStreamReader(
-					(conn.getInputStream())));
-			StringBuilder sb = new StringBuilder();
-
-			String output;
-			System.out.println("Output from Server .... \n");
-			while ((output = br.readLine()) != null) {
-				sb.append(output);
-				sb.append("\n");
-				System.out.println(output);
-			}
-			conn.disconnect();
-		} catch (MalformedURLException e) {
-			System.out.println("MalformedURLException = " + e);
-		} catch (IOException e) {
-			System.out.println("IOException = " + e);
-		}
-		
-	}*/
+	
 	
 	private static void sendRestCall(String xml) {
 		System.out.println("Inside sendRestCall with xml = " + xml);
@@ -321,6 +298,68 @@ public class StarLeadShiftDigitalCronService {
 		} catch (Exception e) {
 			throw new RuntimeException("XMLUtil: Failed to parse XML"
 					+ e.getMessage());
+		}
+	}
+	
+	private static List readCSVFile() throws IOException {
+		List<String> leadList = new ArrayList<String>();
+		String csvFilePath = "/home/stareai/StarLead";
+		String line = "";
+		String cvsSplitBy = ",";
+		BufferedReader br = null;
+		String[] leads = null;
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar cal = Calendar.getInstance();
+		try {
+			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/shiftLeads.csv");
+			if (file.exists()) {
+				System.out.println("File exists");
+				br = new BufferedReader(new FileReader(file));
+				while ((line = br.readLine()) != null) {
+
+					// use comma as separator
+					leads = line.split(cvsSplitBy);
+
+				}
+			}else{
+				file.getParentFile().mkdir();
+				file.createNewFile();
+			}
+			if(leads != null && leads.length > 0){
+				for (String lead : leads) {
+					System.out.println(lead);
+					leadList.add(lead);
+				}
+			}
+		} catch (FileNotFoundException e) {
+			System.out.println("FileNotFoundException while reading csv= " + e);
+		} catch (IOException e) {
+			System.out.println("IOException while reading csv= " + e);
+		} finally {
+			if(br != null){
+				br.close();
+			}
+		}
+		return leadList;
+	}
+	
+	private static void updateFile(String lead, boolean appendComma) throws IOException{
+		String csvFilePath = "/home/stareai/StarLead";
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar cal = Calendar.getInstance();
+		try {
+			FileWriter file = new FileWriter(csvFilePath + "/"
+					+ dateFormat.format(cal.getTime()) + "/shiftLeads.csv", true);
+			if (appendComma) {
+				file.append(",");
+			}
+			file.append(lead);
+			file.flush();
+			file.close();
+		} catch (FileNotFoundException e) {
+			System.out.println("FileNotFoundException while updating csv= " + e);
+		} catch (IOException e) {
+			System.out.println("IOException while reading updating= " + e);
 		}
 	}
 	

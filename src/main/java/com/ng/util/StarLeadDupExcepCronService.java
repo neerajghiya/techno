@@ -17,8 +17,10 @@ import java.net.URL;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Properties;
 import java.util.Random;
 import java.util.TimeZone;
@@ -62,12 +64,15 @@ public class StarLeadDupExcepCronService {
 		
 		File file = new File(yesterdayFilePath);
 		if (file.exists()) {
+			List leadList = readCSVFile();
+			
 			int succuessCount = 0;
 			
 			System.out.println("File exists");
 			
 			File[] paths = file.listFiles();
 			for (File path : paths) {
+				if (!leadList.contains(path.getName())) {
 				// prints file and directory paths
 				System.out.println("File Path = " + path);
 
@@ -104,7 +109,6 @@ public class StarLeadDupExcepCronService {
 					}
 					
 					sendRestCall(xml);
-					path.delete();
 					
 					
 				} catch (FileNotFoundException e) {
@@ -113,6 +117,7 @@ public class StarLeadDupExcepCronService {
 					System.out.println("IOException = " + e);
 				} finally {
 					br.close();
+				}
 				}
 			}
 		
@@ -349,6 +354,47 @@ public class StarLeadDupExcepCronService {
 		} catch (IOException io) {
 			io.printStackTrace();
 		}
+	}
+	
+	private static List readCSVFile() throws IOException {
+		List<String> leadList = new ArrayList<String>();
+		String csvFilePath = "/home/stareai/StarLead";
+		String line = "";
+		String cvsSplitBy = ",";
+		BufferedReader br = null;
+		String[] leads = null;
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar cal = Calendar.getInstance();
+		cal.add(Calendar.DATE, -1);
+		try {
+			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/leads.csv");
+			System.out.println("csvFilePath = " + file.getAbsolutePath());
+			if (file.exists()) {
+				System.out.println("File exists");
+				br = new BufferedReader(new FileReader(file));
+				while ((line = br.readLine()) != null) {
+
+					// use comma as separator
+					leads = line.split(cvsSplitBy);
+
+				}
+			}
+			if(leads != null && leads.length > 0){
+				for (String lead : leads) {
+					System.out.println(lead);
+					leadList.add(lead);
+				}
+			}
+		} catch (FileNotFoundException e) {
+			System.out.println("FileNotFoundException while reading csv= " + e);
+		} catch (IOException e) {
+			System.out.println("IOException while reading csv= " + e);
+		} finally {
+			if(br != null){
+				br.close();
+			}
+		}
+		return leadList;
 	}
 
 }

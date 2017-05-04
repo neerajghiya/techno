@@ -14,8 +14,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Properties;
 
 import javax.mail.Address;
@@ -53,6 +55,8 @@ public class StarLeadCronMonitorService {
 		
 		File file = new File(todaysFilePath);
 		if (file.exists()) {
+			
+			List leadList = readCSVFile();
 			Boolean sentSuccessfully = Boolean.FALSE;
 			int succuessCount = 0;
 			
@@ -60,6 +64,7 @@ public class StarLeadCronMonitorService {
 			
 			File[] paths = file.listFiles();
 			for (File path : paths) {
+				if (!leadList.contains(path.getName())) {
 				// prints file and directory paths
 				System.out.println("File Path = " + path);
 
@@ -84,7 +89,7 @@ public class StarLeadCronMonitorService {
 						}
 						documentIds.append(documentId);
 						writeToSuccessFolder(documentId, sb.toString());
-						path.delete();
+						updateFile(path.getName(), true);
 					}
 					
 				} catch (FileNotFoundException e) {
@@ -93,6 +98,7 @@ public class StarLeadCronMonitorService {
 					System.out.println("IOException = " + e);
 				} finally {
 					br.close();
+				}
 				}
 			}
 			System.out.println("Total Failed Files : " + paths.length + " and Successfully resubmitted = " + succuessCount);
@@ -288,6 +294,68 @@ public class StarLeadCronMonitorService {
 		catch (Exception e)
 		{
 			System.out.println(e);
+		}
+	}
+	
+	private static List readCSVFile() throws IOException {
+		List<String> leadList = new ArrayList<String>();
+		String csvFilePath = "/home/stareai/StarLead";
+		String line = "";
+		String cvsSplitBy = ",";
+		BufferedReader br = null;
+		String[] leads = null;
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar cal = Calendar.getInstance();
+		try {
+			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/batchLeads.csv");
+			if (file.exists()) {
+				System.out.println("File exists");
+				br = new BufferedReader(new FileReader(file));
+				while ((line = br.readLine()) != null) {
+
+					// use comma as separator
+					leads = line.split(cvsSplitBy);
+
+				}
+			}else{
+				file.getParentFile().mkdir();
+				file.createNewFile();
+			}
+			if(leads != null && leads.length > 0){
+				for (String lead : leads) {
+					System.out.println(lead);
+					leadList.add(lead);
+				}
+			}
+		} catch (FileNotFoundException e) {
+			System.out.println("FileNotFoundException while reading csv= " + e);
+		} catch (IOException e) {
+			System.out.println("IOException while reading csv= " + e);
+		} finally {
+			if(br != null){
+				br.close();
+			}
+		}
+		return leadList;
+	}
+	
+	private static void updateFile(String lead, boolean appendComma) throws IOException{
+		String csvFilePath = "/home/stareai/StarLead";
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar cal = Calendar.getInstance();
+		try {
+			FileWriter file = new FileWriter(csvFilePath + "/"
+					+ dateFormat.format(cal.getTime()) + "/batchLeads.csv", true);
+			if (appendComma) {
+				file.append(",");
+			}
+			file.append(lead);
+			file.flush();
+			file.close();
+		} catch (FileNotFoundException e) {
+			System.out.println("FileNotFoundException while updating csv= " + e);
+		} catch (IOException e) {
+			System.out.println("IOException while reading updating= " + e);
 		}
 	}
 
