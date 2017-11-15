@@ -1,3 +1,4 @@
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -15,15 +16,12 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.DateFormat;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
-import java.util.Random;
-import java.util.TimeZone;
 
 import javax.mail.Address;
 import javax.mail.Message;
@@ -43,85 +41,90 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
 
-public class StarLeadDupExcepCronService {
-
+public class OnlineLeadsP2VService {
 	public static void main(String[] args) throws IOException {
-		StarLeadDupExcepCronService cronService = new StarLeadDupExcepCronService();
-		cronService.readAndRunDuplicateFailureFiles();
+		OnlineLeadsP2VService cronService = new OnlineLeadsP2VService();
+		cronService.readAndRunFailureFiles();
 
 	}
 	
-	private void readAndRunDuplicateFailureFiles() throws IOException {
+	private void readAndRunFailureFiles() throws IOException {
 		BufferedReader br = null;
 		StringBuffer requstTimes = new StringBuffer();
+		StringBuffer successLeads = new StringBuffer();
 
-		String failureFilePath = "/usr/appdata/share/eai/starLead/duplicatePushLead2EAI/failure";
+		String failureFilePath = "/StarEAI/DPLogs/OnlineLeads/failed/p2vQueue";
 		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 		Calendar cal = Calendar.getInstance();
-		cal.add(Calendar.DATE, -1);
-		String yesterdayFilePath = failureFilePath + "/" + dateFormat.format(cal.getTime());
-		System.out.println("todaysFilePath = " + yesterdayFilePath);
+		String todayFilePath = failureFilePath + "/" + dateFormat.format(cal.getTime());
+		System.out.println("todaysFilePath = " + todayFilePath);
 		
-		File file = new File(yesterdayFilePath);
+		File file = new File(todayFilePath);
 		if (file.exists()) {
+			
 			List leadList = readCSVFile();
 			
-			int succuessCount = 0;
-			
 			System.out.println("File exists");
-			
+			int totalFileExecuted = 0;
 			File[] paths = file.listFiles();
 			for (File path : paths) {
 				if (!leadList.contains(path.getName())) {
-				// prints file and directory paths
-				System.out.println("File Path = " + path);
+					
+					// prints file and directory paths
+					System.out.println("File Path = " + path);
 
-				try {
-					br = new BufferedReader(new FileReader(path));
-					StringBuilder sb = new StringBuilder();
-					String line = br.readLine();
-					System.out.println("line = " + line);
-					while (line != null) {
-						sb.append(line);
-						sb.append("\n");
-						line = br.readLine();
-					}
-					String xml = sb.toString();
-					
-					String requestTime = getElementValue(xml, "/Message/MessageHeader/RequestTime");
-					int startIndex = requestTime.length() - 6;
-					String timeZone = requestTime.substring(startIndex, requestTime.length());
-					System.out.println("requestTime = " + requestTime + " timezone = " + timeZone);
-					SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-					
 					try {
-						final Random random = new Random();
-						Date date = sdf.parse(requestTime);
-						Long time = date.getTime();
-						time = time + random.nextInt(1000);
-						String formattedTime = sdf.format(time);
-						formattedTime = formattedTime + timeZone;
-						System.out.println("formattedTime = " + formattedTime);
-						xml = changeRequestTime(xml, formattedTime);
-					} catch (ParseException e) {
-						System.out.println("ParseException" + e  );
-						requstTimes.append(requestTime);
+						br = new BufferedReader(new FileReader(path));
+						StringBuilder sb = new StringBuilder();
+						String line = br.readLine();
+						System.out.println("line = " + line);
+						while (line != null) {
+							sb.append(line);
+							sb.append("\n");
+							line = br.readLine();
+						}
+						String xml = sb.toString();
+						
+						xml = changeBusinessServiceName(xml, "P2VQueue");
+
+						String requestTime = getElementValue(xml,
+								"/Message/MessageHeader/RequestTime");
+						int startIndex = requestTime.length() - 6;
+						String timeZone = requestTime.substring(startIndex,
+								requestTime.length());
+						System.out.println("requestTime = " + requestTime
+								+ " timezone = " + timeZone);
+						SimpleDateFormat sdf = new SimpleDateFormat(
+								"yyyy-MM-dd'T'HH:mm:ss.SSS");
+
+						
+
+						sendRestCall(xml);
+						totalFileExecuted++;
+						successLeads.append(path.getName());
+						successLeads.append(",");
+						if(leadList.size() > 0 || totalFileExecuted >0){
+							updateFile(path.getName(), true);
+						}else{
+							updateFile(path.getName(), false);
+						}
+
+					} catch (FileNotFoundException e) {
+						System.out.println("FileNotFoundException = " + e);
+					} catch (IOException e) {
+						System.out.println("IOException = " + e);
+					} finally {
+						br.close();
 					}
-					
-					sendRestCall(xml);
-					
-					
-				} catch (FileNotFoundException e) {
-					System.out.println("FileNotFoundException = " + e);
-				} catch (IOException e) {
-					System.out.println("IOException = " + e);
-				} finally {
-					br.close();
-				}
 				}
 			}
-		
-			sendMail("Total Failed Files : " + paths.length + "\n  Failed to parse request time = " + "( " + requstTimes + ")");
+			
+			if(totalFileExecuted > 0){
+				sendMail("Total Failed Files : " + totalFileExecuted
+						+ "\n  Failed to parse request time = " + "( "
+						+ requstTimes + ")" + "Successfully executed = " + "( "
+						+ successLeads + ")");
+			}
 		}
 
 	}
@@ -129,7 +132,7 @@ public class StarLeadDupExcepCronService {
 	private void sendRestCall(String xml) {
 		System.out.println("Inside sendRestCall with xml = " + xml);
 		try {
-			URL url = new URL("http://starleadeai.usfdc.corpintra.net/StarLeadEAIWeb/MessageServlet");
+			URL url = new URL("http://starleadeai-qa.usfdc.corpintra.net/StarLeadEAIWeb/MessageServlet");
 			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 			conn.setDoOutput(true);
 			conn.setRequestMethod("POST");
@@ -238,7 +241,7 @@ public class StarLeadDupExcepCronService {
 		try
 		{
 			Properties props = System.getProperties();
-			props.put("mail.host", "mailhost.americas.svc.corpintra.net");
+			props.put("mail.host", "mailhost.americas.bg.corpintra.net");
 			props.put("mail.store.protocol", "pop3");
 			props.put("mail.transport.protocol", "smtp");
 			props.put("mail.user", "starlead-eai-hub@mbusa.com");
@@ -259,7 +262,7 @@ public class StarLeadDupExcepCronService {
 			msg.addRecipients(Message.RecipientType.TO, address);
 			System.out.println( "address: set");
 			
-			msg.setSubject("-[Star Leads-PROD] Application Automated Result(DuplicateKey)-");
+			msg.setSubject("-[Star Leads-PROD] Application Automated Result(DuplicateKey - OnlineLeads)-");
 			msg.setText(body);
 			
 			msg.setHeader("MIME-Version", "1.0");
@@ -365,10 +368,8 @@ public class StarLeadDupExcepCronService {
 		String[] leads = null;
 		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 		Calendar cal = Calendar.getInstance();
-		cal.add(Calendar.DATE, -1);
 		try {
-			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/leads.csv");
-			System.out.println("csvFilePath = " + file.getAbsolutePath());
+			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/onlineP2VLeads.csv");
 			if (file.exists()) {
 				System.out.println("File exists");
 				br = new BufferedReader(new FileReader(file));
@@ -378,6 +379,9 @@ public class StarLeadDupExcepCronService {
 					leads = line.split(cvsSplitBy);
 
 				}
+			}else{
+				file.getParentFile().mkdir();
+				file.createNewFile();
 			}
 			if(leads != null && leads.length > 0){
 				for (String lead : leads) {
@@ -396,5 +400,34 @@ public class StarLeadDupExcepCronService {
 		}
 		return leadList;
 	}
-
+	
+	private static void updateFile(String lead, boolean appendComma) throws IOException{
+		String csvFilePath = "/home/stareai/StarLead";
+		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar cal = Calendar.getInstance();
+		try {
+			FileWriter file = new FileWriter(csvFilePath + "/"
+					+ dateFormat.format(cal.getTime()) + "/onlineP2VLeads.csv", true);
+			if (appendComma) {
+				file.append(",");
+			}
+			file.append(lead);
+			file.flush();
+			file.close();
+		} catch (FileNotFoundException e) {
+			System.out.println("FileNotFoundException while updating csv= " + e);
+		} catch (IOException e) {
+			System.out.println("IOException while reading updating= " + e);
+		}
+	}
+	
+	private String changeBusinessServiceName(String xml, String businessServiceName) {
+		Document doc = parseAsXml(xml);
+		Element root = doc.getDocumentElement();
+		setXNodeValue(root, "/Message/MessageHeader/BusinessService", businessServiceName);
+		
+		String finalInput = serializeAsString(doc.getDocumentElement(),true);
+		
+		return finalInput;
+	}
 }

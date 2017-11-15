@@ -87,14 +87,16 @@ public class StarLeadShiftDigitalCronService {
 			sendRestCall(xml);
 			updateFile(files[i].getName(), true);
 		}
-		sendMail("Total Failed Files : " + files.length + "\n  File Name = " + "( " + documentIds + ")");
+		if(files.length > 0){
+			sendMail("Total Failed Files : " + files.length + "\n  File Name = " + "( " + documentIds + ")");
+		}
 	}
 	
 	private static void sendMail(String body)	  {
 		try
 		{
 			Properties props = System.getProperties();
-			props.put("mail.host", "mailhost.americas.bg.corpintra.net");
+			props.put("mail.host", "mailhost.americas.svc.corpintra.net");
 			//props.put("mail.host", "smtp.gmail.com");
 			props.put("mail.store.protocol", "pop3");
 			props.put("mail.transport.protocol", "smtp");

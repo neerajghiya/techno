@@ -247,7 +247,7 @@ public class StarLeadCronService {
 		try
 		{
 			Properties props = System.getProperties();
-			props.put("mail.host", "mailhost.americas.bg.corpintra.net");
+			props.put("mail.host", "mailhost.americas.svc.corpintra.net");
 			//props.put("mail.host", "smtp.gmail.com");
 			props.put("mail.store.protocol", "pop3");
 			props.put("mail.transport.protocol", "smtp");

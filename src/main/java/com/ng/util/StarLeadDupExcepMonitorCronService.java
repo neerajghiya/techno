@@ -131,11 +131,13 @@ public class StarLeadDupExcepMonitorCronService {
 					}
 				}
 			}
-		
-			sendMail("Total Failed Files : " + totalFileExecuted
-					+ "\n  Failed to parse request time = " + "( "
-					+ requstTimes + ")" + "Successfully executed = " + "( "
-					+ successLeads + ")");
+			
+			if(totalFileExecuted > 0){
+				sendMail("Total Failed Files : " + totalFileExecuted
+						+ "\n  Failed to parse request time = " + "( "
+						+ requstTimes + ")" + "Successfully executed = " + "( "
+						+ successLeads + ")");
+			}
 		}
 
 	}
@@ -252,7 +254,7 @@ public class StarLeadDupExcepMonitorCronService {
 		try
 		{
 			Properties props = System.getProperties();
-			props.put("mail.host", "mailhost.americas.bg.corpintra.net");
+			props.put("mail.host", "mailhost.americas.svc.corpintra.net");
 			props.put("mail.store.protocol", "pop3");
 			props.put("mail.transport.protocol", "smtp");
 			props.put("mail.user", "starlead-eai-hub@mbusa.com");

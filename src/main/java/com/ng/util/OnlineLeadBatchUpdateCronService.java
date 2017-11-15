@@ -1,8 +1,11 @@
+
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -15,15 +18,12 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.DateFormat;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
-import java.util.Random;
-import java.util.TimeZone;
 
 import javax.mail.Address;
 import javax.mail.Message;
@@ -43,39 +43,38 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
 
-public class StarLeadDupExcepCronService {
-
-	public static void main(String[] args) throws IOException {
-		StarLeadDupExcepCronService cronService = new StarLeadDupExcepCronService();
-		cronService.readAndRunDuplicateFailureFiles();
-
-	}
+public class OnlineLeadBatchUpdateCronService {
 	
-	private void readAndRunDuplicateFailureFiles() throws IOException {
-		BufferedReader br = null;
-		StringBuffer requstTimes = new StringBuffer();
+	public static void main(String[] args) throws IOException {
+		OnlineLeadBatchUpdateCronService cronService = new OnlineLeadBatchUpdateCronService();
+		cronService.readAndRunBatchUpdateFailureFiles();
+	}
 
-		String failureFilePath = "/usr/appdata/share/eai/starLead/duplicatePushLead2EAI/failure";
+	private void readAndRunBatchUpdateFailureFiles() throws IOException {
+		BufferedReader br = null;
+		StringBuffer documentIds = new StringBuffer();
+	
+		String failureFilePath = "/usr/appdata/share/eai/starLead/onlineLeadBatchUpdate/failure";
 		DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 		Calendar cal = Calendar.getInstance();
 		cal.add(Calendar.DATE, -1);
-		String yesterdayFilePath = failureFilePath + "/" + dateFormat.format(cal.getTime());
-		System.out.println("todaysFilePath = " + yesterdayFilePath);
-		
-		File file = new File(yesterdayFilePath);
+		String todaysFilePath = failureFilePath + "/" + dateFormat.format(cal.getTime());
+		System.out.println("todaysFilePath = " + todaysFilePath);
+	
+		File file = new File(todaysFilePath);
 		if (file.exists()) {
-			List leadList = readCSVFile();
-			
-			int succuessCount = 0;
-			
-			System.out.println("File exists");
-			
-			File[] paths = file.listFiles();
-			for (File path : paths) {
-				if (!leadList.contains(path.getName())) {
-				// prints file and directory paths
+		List leadList = readCSVFile();
+		Boolean sentSuccessfully = Boolean.FALSE;
+		int succuessCount = 0;
+		
+		System.out.println("File exists");
+		
+		File[] paths = file.listFiles();
+		for (File path : paths) {
+			if (!leadList.contains(path.getName())) {
+			// prints file and directory paths
 				System.out.println("File Path = " + path);
-
+	
 				try {
 					br = new BufferedReader(new FileReader(path));
 					StringBuilder sb = new StringBuilder();
@@ -86,30 +85,18 @@ public class StarLeadDupExcepCronService {
 						sb.append("\n");
 						line = br.readLine();
 					}
-					String xml = sb.toString();
+					sentSuccessfully = sendRestCall(sb.toString());
 					
-					String requestTime = getElementValue(xml, "/Message/MessageHeader/RequestTime");
-					int startIndex = requestTime.length() - 6;
-					String timeZone = requestTime.substring(startIndex, requestTime.length());
-					System.out.println("requestTime = " + requestTime + " timezone = " + timeZone);
-					SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-					
-					try {
-						final Random random = new Random();
-						Date date = sdf.parse(requestTime);
-						Long time = date.getTime();
-						time = time + random.nextInt(1000);
-						String formattedTime = sdf.format(time);
-						formattedTime = formattedTime + timeZone;
-						System.out.println("formattedTime = " + formattedTime);
-						xml = changeRequestTime(xml, formattedTime);
-					} catch (ParseException e) {
-						System.out.println("ParseException" + e  );
-						requstTimes.append(requestTime);
+					if(sentSuccessfully){
+						succuessCount = succuessCount + 1;
+						String documentId = getElementValue(sb.toString(), "/UpdateLeadInfos/UpdateLeadInfo/DOCUMENTID");
+						System.out.println("documentId = " + documentId);
+						if(documentIds.length() != 0){
+							documentIds.append(",");
+						}
+						documentIds.append(documentId);
+						writeToSuccessFolder(documentId, sb.toString());
 					}
-					
-					sendRestCall(xml);
-					
 					
 				} catch (FileNotFoundException e) {
 					System.out.println("FileNotFoundException = " + e);
@@ -120,31 +107,55 @@ public class StarLeadDupExcepCronService {
 				}
 				}
 			}
-		
-			sendMail("Total Failed Files : " + paths.length + "\n  Failed to parse request time = " + "( " + requstTimes + ")");
+			System.out.println("Total Failed Files : " + paths.length + " and Successfully resubmitted = " + succuessCount);
+			sendMail("Total Failed Files : " + paths.length + " and Successfully resubmitted = " + succuessCount + "( " + documentIds + ")");
 		}
 
-	}
+}
+
+	private void writeToSuccessFolder(String fileName, String fileContent) {
+		try {
+			String filePath = "/usr/appdata/share/eai/starLead/onlineLeadUpdate/success";
+			DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+			Calendar cal = Calendar.getInstance();
+			cal.add(Calendar.DATE, -1);
+			String todaysFilePath = filePath + "/" + dateFormat.format(cal.getTime());
+			File file1 = new File(todaysFilePath);
+			file1.mkdirs();
+			File file = new File(todaysFilePath + "/" + fileName);
+			FileWriter fw = new FileWriter(file, false);
+			fw.write(fileContent);
+			fw.close();
+		} catch (Exception e) {
+			System.out.println(e);
+		}
 	
-	private void sendRestCall(String xml) {
+	}
+
+	private Boolean sendRestCall(String xml) {
+		Boolean sentSuccessfully = Boolean.FALSE;
 		System.out.println("Inside sendRestCall with xml = " + xml);
 		try {
-			URL url = new URL("http://starleadeai.usfdc.corpintra.net/StarLeadEAIWeb/MessageServlet");
+			URL url = new URL("http://starleadeai-qa.usfdc.corpintra.net/StarLeadEAIWeb/UpdateOnlineLeadServlet");//new URL(StarleadUtil.getRestLeadUpdateUrl("leadUpdate"));
 			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 			conn.setDoOutput(true);
 			conn.setRequestMethod("POST");
 			conn.setRequestProperty("Content-Type", "application/xml");
-
+	
 			String input = xml;
-
+	
 			OutputStream os = conn.getOutputStream();
 			os.write(input.getBytes());
 			os.flush();
-			
+			if (conn.getResponseCode() != HttpURLConnection.HTTP_CREATED) {
+				System.out.println("Failed : HTTP error code : " + conn.getResponseCode());
+				//throw new RuntimeException("Failed : HTTP error code : " + conn.getResponseCode());
+			}
+	
 			BufferedReader br = new BufferedReader(new InputStreamReader(
 					(conn.getInputStream())));
 			StringBuilder sb = new StringBuilder();
-
+	
 			String output;
 			System.out.println("Output from Server .... \n");
 			while ((output = br.readLine()) != null) {
@@ -152,7 +163,11 @@ public class StarLeadDupExcepCronService {
 				sb.append("\n");
 				System.out.println(output);
 			}
-			
+			String statusCode = getElementValue(sb.toString(), "/UpdateLeadInfosResponse/StatusCode");
+			System.out.println("statusCode = " + statusCode);
+			if(statusCode.equals("0")){
+				sentSuccessfully = Boolean.TRUE;
+			}
 			conn.disconnect();
 		} catch (MalformedURLException e) {
 			System.out.println("MalformedURLException = " + e);
@@ -160,8 +175,9 @@ public class StarLeadDupExcepCronService {
 			System.out.println("IOException = " + e);
 		}
 		
+		return sentSuccessfully;
 	}
-	
+
 	private String getElementValue(String xml, String xPath){
 		Document doc = parseAsXml(xml);
 		Element root = doc.getDocumentElement();
@@ -191,7 +207,7 @@ public class StarLeadDupExcepCronService {
 		if (xmlString != null) {
 			try {
 				xmlString = getUTF8Encoded(xmlString);
-
+	
 				StringReader stringReader = new StringReader(xmlString);
 				InputSource inputSource = new InputSource();
 				inputSource.setCharacterStream(stringReader);
@@ -216,7 +232,7 @@ public class StarLeadDupExcepCronService {
 			InputStream inputStream = null;
 			DocumentBuilderFactory factory = DocumentBuilderFactory
 					.newInstance();
-
+	
 			factory.setValidating(false);
 			factory.setNamespaceAware(false);
 			if (theStream instanceof InputSource) {
@@ -224,7 +240,7 @@ public class StarLeadDupExcepCronService {
 				document = factory.newDocumentBuilder().parse(inputSource);
 			} else if (theStream instanceof InputStream) {
 				inputStream = (InputStream) theStream;
-
+	
 				document = factory.newDocumentBuilder().parse(inputStream);
 			}
 			return document;
@@ -238,121 +254,52 @@ public class StarLeadDupExcepCronService {
 		try
 		{
 			Properties props = System.getProperties();
-			props.put("mail.host", "mailhost.americas.svc.corpintra.net");
+			props.put("mail.host", "mailhost.americas.bg.corpintra.net");
+			//props.put("mail.host", "smtp.gmail.com");
 			props.put("mail.store.protocol", "pop3");
 			props.put("mail.transport.protocol", "smtp");
 			props.put("mail.user", "starlead-eai-hub@mbusa.com");
 			props.put("mail.from", "starlead-eai-hub@mbusa.com");
+			//props.put("mail.smtp.port", "587");
+			//props.put("mail.smtp.auth", "false");
+			//props.put("mail.smtp.starttls.enable", "false");
 			
-			
-
+	
 			Session mailSession = Session.getDefaultInstance(props, null);
-
+	
 			MimeMessage msg = new MimeMessage(mailSession);
-
+	
 			String from = "starlead-eai-hub@mbusa.com";
 			InternetAddress sender = new InternetAddress(from, from );
 			msg.setFrom(sender);
-
+	
 			String to = "sga.jain@mbusa.com, sga.ghiya@mbusa.com";
 			Address[] address = (Address[]) InternetAddress.parse(to, false);
 			msg.addRecipients(Message.RecipientType.TO, address);
 			System.out.println( "address: set");
 			
-			msg.setSubject("-[Star Leads-PROD] Application Automated Result(DuplicateKey)-");
+			msg.setSubject("-[Star Leads-PROD] Application Automated Result(LeadBatchUpdate)-");
 			msg.setText(body);
 			
 			msg.setHeader("MIME-Version", "1.0");
 			msg.setHeader("Content-Type", "text/html; charset=\"us-ascii\"");
-
+	
 			msg.setSentDate(new Date());
-
+	
 			Transport.send(msg);
 			System.out.println( "Message Sent to:" + to );
-
+	
 		}
 		catch (AddressException ae)
 		{ System.out.println(ae.getMessage());
 			}
 		catch (MessagingException me)
 		{ System.out.println(me.getMessage());
-
+	
 		}
 		catch (Exception e)
 		{
 			System.out.println(e);
-		}
-	}
-	
-	private String changeRequestTime(String xml, String requestTime) {
-		Document doc = parseAsXml(xml);
-		Element root = doc.getDocumentElement();
-		setXNodeValue(root, "/Message/MessageHeader/RequestTime", requestTime);
-		String finalInput = serializeAsString(doc.getDocumentElement(),true);
-		return finalInput;
-	}
-	
-	private void setXNodeValue(Element element, String xQuery,	String nodeValue) {
-		try {
-			Node node = XPathAPI.selectSingleNode(element, xQuery);
-			if (node != null) {
-				Node lastChild = node.getLastChild();
-				if (lastChild != null)
-					lastChild.setNodeValue(nodeValue);
-				else
-					node.appendChild(element.getOwnerDocument().createTextNode(
-							nodeValue));
-			}
-		} catch (Exception ex) {
-			ex.printStackTrace();
-		}
-	}
-	
-	private String serializeAsString(Node node, boolean pretty) {
-		return serializeAsString(node, null, pretty);
-	}
-
-	private String serializeAsString(Node node, String[] escapableTags,
-			boolean pretty) {
-		StringBuffer sB = new StringBuffer();
-		StringWriter sw = new StringWriter();
-		try {
-			serializeXML(node, sw, escapableTags, pretty);
-			sB.append(sw.toString());
-		} catch (Exception ex) {
-			System.out.println("Exception Caught:: " + ex);
-			ex.printStackTrace();
-		} finally {
-			try {
-				sw.close();
-			} catch (Exception localException2) {
-			}
-		}
-		return sB.toString();
-	}
-
-	private void serializeXML(Node node, Writer writer,
-			String[] escapableTags, boolean pretty) {
-		try {
-			if ((node == null) || (writer == null)) {
-				System.err
-						.println("serializeAsString call has a null parameter for: "
-								+ ((node == null) ? "node" : "writer"));
-			}
-			OutputFormat outputFormat = new OutputFormat();
-			outputFormat.setOmitXMLDeclaration(true);
-			if ((escapableTags != null) && (escapableTags.length > 0)) {
-				outputFormat.setNonEscapingElements(escapableTags);
-			}
-			if (pretty) {
-				outputFormat.setIndenting(true);
-				outputFormat.setLineSeparator("\n");
-			}
-			XMLSerializer serializer = new XMLSerializer(writer, outputFormat);
-			serializer.asDOMSerializer();
-			serializer.serialize((Element) node);
-		} catch (IOException io) {
-			io.printStackTrace();
 		}
 	}
 	
@@ -367,16 +314,16 @@ public class StarLeadDupExcepCronService {
 		Calendar cal = Calendar.getInstance();
 		cal.add(Calendar.DATE, -1);
 		try {
-			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/leads.csv");
+			File file = new File(csvFilePath + "/" + dateFormat.format(cal.getTime()) + "/onlineBatchUpdateLeads.csv");
 			System.out.println("csvFilePath = " + file.getAbsolutePath());
 			if (file.exists()) {
 				System.out.println("File exists");
 				br = new BufferedReader(new FileReader(file));
 				while ((line = br.readLine()) != null) {
-
+	
 					// use comma as separator
 					leads = line.split(cvsSplitBy);
-
+	
 				}
 			}
 			if(leads != null && leads.length > 0){
@@ -396,5 +343,4 @@ public class StarLeadDupExcepCronService {
 		}
 		return leadList;
 	}
-
 }
